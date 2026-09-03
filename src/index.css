@@ -1,0 +1,191 @@
+@import 'tailwindcss';
+
+/* ---------------------------------------------------------------------------
+   Design tokens.
+
+   This is an employer's careers site, so **light is the default** and dark is
+   the supported alternative. It used to be the other way round, when the page
+   was a single application form with a transcript beside it and read as a
+   listening room. A job board does not; a person scanning nine openings in
+   daylight is the case to design for.
+
+   Palette: warm neutral greys, one accent (petrol blue), one caution (amber).
+   Petrol rather than the periwinkle this file used to carry: a mid-blue accent
+   glowing on near-black is the house style of every generated demo, and this
+   page is trying to look like an employer instead.
+
+   No photography anywhere, and that is a constraint rather than a taste: the
+   deployed CSP is `img-src 'self' data:`, and four sentences of this app's own
+   copy promise that nothing leaves the tab. An image CDN would quietly make
+   those sentences false. Identity is carried by type, colour and layout.
+
+   Shape lock: panels 14px, controls 10px, pills for status chips only.
+--------------------------------------------------------------------------- */
+
+@theme {
+  --font-sans: 'Outfit Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, monospace;
+
+  --color-paper: #f7f6f4;
+  --color-surface: #ffffff;
+  --color-surface-sunk: #efedea;
+  --color-line: #e0ddd8;
+  --color-line-strong: #c7c2ba;
+
+  --color-ink: #1a1c1e;
+  --color-ink-muted: #55595e;
+  --color-ink-faint: #7c8188;
+
+  --color-accent: #17527d;
+  --color-accent-hover: #0f3d61;
+  --color-accent-soft: #e7eff6;
+  --color-accent-line: #b3ccdf;
+
+  --color-caution: #8a5a12;
+  --color-caution-soft: #faf1df;
+  --color-caution-line: #e5d0a6;
+
+  --radius-panel: 14px;
+  --radius-control: 10px;
+}
+
+@layer theme {
+  :root {
+    color-scheme: light dark;
+  }
+
+  /* Same roles, inverted ground. Both directions are declared so the toggle
+     wins over the system preference in either mode. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --color-paper: #16181b;
+      --color-surface: #1e2126;
+      --color-surface-sunk: #262a30;
+      --color-line: #333941;
+      --color-line-strong: #4a515b;
+
+      --color-ink: #f2f1ef;
+      --color-ink-muted: #adb3bb;
+      --color-ink-faint: #838a93;
+
+      --color-accent: #7fb4dd;
+      --color-accent-hover: #9cc8e9;
+      --color-accent-soft: #16293a;
+      --color-accent-line: #2f4f6b;
+
+      --color-caution: #dcae5f;
+      --color-caution-soft: #2a2317;
+      --color-caution-line: #4a3f24;
+    }
+  }
+
+  :root[data-theme='dark'] {
+    --color-paper: #16181b;
+    --color-surface: #1e2126;
+    --color-surface-sunk: #262a30;
+    --color-line: #333941;
+    --color-line-strong: #4a515b;
+
+    --color-ink: #f2f1ef;
+    --color-ink-muted: #adb3bb;
+    --color-ink-faint: #838a93;
+
+    --color-accent: #7fb4dd;
+    --color-accent-hover: #9cc8e9;
+    --color-accent-soft: #16293a;
+    --color-accent-line: #2f4f6b;
+
+    --color-caution: #dcae5f;
+    --color-caution-soft: #2a2317;
+    --color-caution-line: #4a3f24;
+  }
+}
+
+@layer base {
+  body {
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Agent activity.
+
+   `:tool-call-active` is not a thing; the real WebMCP pseudo-classes are
+   `:tool-form-active` and `:tool-submit-active`, and they belong to declarative
+   form tools, which this demo does not use. What it has instead is the class
+   below, applied by React while a tool the voice called is writing to a field.
+
+   Keeping the two separate matters: one is platform behavior and the other is
+   ours, and a demo that blurs them is claiming the browser does something it
+   does not.
+--------------------------------------------------------------------------- */
+
+@layer components {
+  .field-just-filled {
+    animation: field-flash 900ms ease-out;
+  }
+
+  @keyframes field-flash {
+    0% {
+      border-color: var(--color-accent);
+      background-color: var(--color-accent-soft);
+    }
+    100% {
+      border-color: var(--color-line-strong);
+      background-color: var(--color-surface);
+    }
+  }
+
+  /* The field the agent has asked about and is waiting on. Deliberately a
+     steady ring rather than the one-shot flash `field-just-filled` uses: one
+     says "this just happened", the other says "this is still your turn". */
+  .field-awaited {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+  }
+
+  /* The role the agent is reading out. Same ring as an awaited field, because
+     it means the same thing: this is the one being talked about right now. */
+  .role-card-current {
+    box-shadow: 0 0 0 3px var(--color-accent-soft);
+  }
+
+  /* The submit button, focused by prepare_submit and pressed by nobody else. */
+  .submit-armed {
+    box-shadow: 0 0 0 3px var(--color-accent-line);
+  }
+
+  /* Cards lift by one pixel on hover. The only motion on the board, and it is
+     feedback on a thing you are about to click rather than decoration. */
+  .role-card {
+    transition:
+      border-color 160ms ease,
+      transform 160ms ease;
+  }
+
+  .role-card:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .role-card:hover {
+    transform: none;
+  }
+}

@@ -1,0 +1,106 @@
+# VocalApply behind Caddy: the two headers WebMCP needs, a CSP that lists every
+# origin the page actually calls, and the two shared-credit routes.
+#
+# Nothing here is specific to one host. Set SITE_HOST, and the two keys only if
+# you want the keyless "shared credit" path; without them those routes 502 and
+# the app falls back to asking each visitor for their own key, which is a
+# perfectly good way to run this.
+#
+#   SITE_HOST=vocalapply.example.com
+#   VOICE_OPENAI_KEY=sk-...      # optional
+#   VOICE_GEMINI_KEY=...         # optional
+#
+# Behind a TLS terminator (Traefik, a tunnel, a load balancer) use http:// as
+# below and let that layer hold the certificate. Standing alone, change it to
+# {$SITE_HOST} and Caddy will get its own.
+
+http://{$SITE_HOST} {
+	root * /srv/vocalapply/current
+	encode gzip zstd
+
+	# --- The two headers this app lives or dies by -----------------------
+	#
+	# `tools=(self)` is what permits WebMCP at all. Set it to `tools=()` and
+	# every tool silently fails to register: the page looks merely broken,
+	# with nothing in the console explaining why.
+	#
+	# `microphone=(self)` is needed for the live voice session. The rest are
+	# denied rather than left at their defaults.
+	header {
+		Permissions-Policy "tools=(self), microphone=(self), camera=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), midi=(), display-capture=()"
+		Origin-Agent-Cluster "?1"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Content-Type-Options "nosniff"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+
+		# connect-src must list EVERY origin the page calls, and `wss:` is a
+		# separate source expression from `https:` under CSP3 scheme matching
+		# — one does not cover the other. A missing origin fails only in
+		# production, because the dev server sets no CSP at all, and it
+		# surfaces as `TypeError: Failed to fetch` with no mention of CSP.
+		#
+		# wss://{$SITE_HOST} is the shared Gemini relay below. It is listed
+		# explicitly rather than trusted to 'self', because a same-origin
+		# wss: connection is not reliably covered by 'self' across browsers.
+		Content-Security-Policy "default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' wss://{$SITE_HOST} https://generativelanguage.googleapis.com wss://generativelanguage.googleapis.com https://api.openai.com https://us.i.posthog.com; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+	}
+
+	# --- Caching ---------------------------------------------------------
+	#
+	# Vite content-hashes everything under /assets/ and nothing else. In
+	# particular /pcm-processor.js comes from public/, is unhashed, and must
+	# stay revalidated: a naive `*.js -> immutable` rule pins a stale audio
+	# worklet in every returning visitor's browser for a year.
+	@hashed path /assets/*
+	header @hashed Cache-Control "public, max-age=31536000, immutable"
+	header /pcm-processor.js Cache-Control "no-cache"
+	header /index.html Cache-Control "no-cache"
+
+	# --- Shared credit, and why the two providers differ -----------------
+	#
+	# The app has no backend, so a key in the bundle would be readable by
+	# anyone with curl. Both routes below keep the key on the server.
+	#
+	# OpenAI has an ephemeral token that works: one POST mints a client
+	# secret worth about ten minutes, and the browser then talks to
+	# api.openai.com directly. No audio crosses this server.
+	#
+	# Gemini has no such token. Its `auth_tokens` mint 200 and then
+	# authenticate nothing on the Live socket — 1008 "Method doesn't allow
+	# unregistered callers" for `access_token=`, 1007 "API key not valid"
+	# for `key=`, on v1beta and v1alpha, bound to a model and unbound.
+	# Measured 2026-09-03. So its shared path relays the socket itself,
+	# which has two consequences worth deciding about deliberately:
+	#
+	#   - every audio frame crosses this server, both directions, for the
+	#     whole session.
+	#   - the route is unauthenticated. Anyone who finds it can spend your
+	#     Gemini quota, and rotating the key is the only lever. Put a hard
+	#     spend cap on any key you use here, or leave VOICE_GEMINI_KEY unset
+	#     and let visitors bring their own.
+	handle /api/openai-token {
+		uri replace /api/openai-token /v1/realtime/client_secrets
+		reverse_proxy https://api.openai.com {
+			header_up Host api.openai.com
+			header_up Authorization "Bearer {$VOICE_OPENAI_KEY:}"
+			header_down -Access-Control-Allow-Origin
+		}
+	}
+
+	handle /api/gemini-live {
+		rewrite * /ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={$VOICE_GEMINI_KEY:}
+		reverse_proxy https://generativelanguage.googleapis.com {
+			header_up Host generativelanguage.googleapis.com
+		}
+	}
+
+	# The static site is a `handle` too, and it has to be: `handle` blocks are
+	# mutually exclusive only against each other. With file serving left at the
+	# top level, a POST to /api/* falls through to file_server, which answers
+	# 405 to anything that is not GET or HEAD — an error that reads like the
+	# upstream refusing the method rather than a routing mistake here.
+	handle {
+		try_files {path} /index.html
+		file_server
+	}
+}

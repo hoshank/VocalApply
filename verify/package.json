@@ -1,0 +1,15 @@
+{
+  "name": "vocalapply-verify",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "End-to-end checks for VocalApply. Needs a real Chrome 149+; puppeteer-core ships no browser, so point CHROME at one.",
+  "scripts": {
+    "scope": "node voice-scope-verify.mjs",
+    "audio": "node voice-audio-verify.mjs",
+    "shared-credit": "node voice-shared-credit-verify.mjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "^24.10.2"
+  }
+}
