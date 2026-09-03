@@ -14,7 +14,8 @@
  * mutate the visible form on every boot.
  */
 
-import type { ModelContext, RegisteredTool } from './types';
+import type { RegisteredTool } from './types';
+import { getModelContext } from './polyfill';
 import { TOOL_COPY, type ToolName } from './toolCopy';
 
 function assert(condition: boolean, message: string): void {
@@ -25,8 +26,8 @@ function assert(condition: boolean, message: string): void {
 const NAME_RULE = /^[A-Za-z0-9_.-]{1,128}$/;
 
 export async function __toolsSelfCheck(): Promise<string> {
-  const modelContext = (document as Document & { modelContext?: ModelContext }).modelContext;
-  assert(modelContext !== undefined, 'no document.modelContext, so nothing registered');
+  const modelContext = getModelContext();
+  assert(modelContext !== undefined, 'no model context, so nothing registered');
 
   const tools = (await modelContext!.getTools()) as RegisteredTool[];
   const names = tools.map((tool) => tool.name);

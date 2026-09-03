@@ -505,6 +505,21 @@ function looksLikeModelContext(value: unknown): value is ModelContext {
   );
 }
 
+/** Whatever this page ended up with: the browser's, or ours. */
+let active: ModelContext | null = null;
+
+/**
+ * The model context this page actually talks to.
+ *
+ * Not necessarily `document.modelContext`. A shell that installs its own
+ * non-configurable `modelContext` on the document owns that property for the
+ * life of the page, and this returns the working one instead. Every caller
+ * reads through here; nothing reads the document directly.
+ */
+export function getModelContext(): ModelContext | undefined {
+  return active ?? undefined;
+}
+
 /**
  * Installs the polyfill if and only if the browser lacks a native
  * implementation. Returns true when a native `document.modelContext` was found.
@@ -512,25 +527,52 @@ function looksLikeModelContext(value: unknown): value is ModelContext {
 export function setupWebMCPPolyfill(): boolean {
   if (typeof window === 'undefined') return false;
 
-  if ('modelContext' in document && looksLikeModelContext(document.modelContext)) {
+  const existing = 'modelContext' in document ? document.modelContext : undefined;
+  if (looksLikeModelContext(existing)) {
+    active = existing;
     return true;
   }
 
-  Object.defineProperty(document, 'modelContext', {
-    value: new PolyfilledModelContext(document),
-    configurable: true,
-    enumerable: false,
-    writable: false,
-  });
+  const polyfill = new PolyfilledModelContext(document);
+  active = polyfill;
+
+  try {
+    Object.defineProperty(document, 'modelContext', {
+      value: polyfill,
+      configurable: true,
+      enumerable: false,
+      writable: false,
+    });
+  } catch {
+    // An AI-browser shell — ChatGPT's is the one this was found on — can
+    // install a *non-configurable* `document.modelContext` stub that fails the
+    // duck-type above. `defineProperty` over it throws `TypeError: Cannot
+    // redefine property: modelContext`, and this runs at module scope, so the
+    // throw is a white page before React renders a single node. Chrome, which
+    // either has no `modelContext` or has a real one, never reaches here.
+    //
+    // Assignment still lands if the stub left the property writable or gave it
+    // a setter. If it did not, the document keeps theirs and `getModelContext`
+    // is the only route to a working one.
+    try {
+      (document as { modelContext?: ModelContext }).modelContext = polyfill;
+    } catch {
+      /* frozen; `active` is still the polyfill */
+    }
+
+    if (document.modelContext !== polyfill) {
+      console.warn(
+        '[WebMCP] This browser owns document.modelContext and what it put ' +
+          'there is not usable, so the polyfill runs beside it. Anything ' +
+          'reading the document directly sees theirs, not ours.'
+      );
+    }
+  }
 
   return false;
 }
 
 /** True when tools are backed by the browser rather than by this file. */
 export function isNativeWebMCP(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    'modelContext' in document &&
-    !(document.modelContext instanceof PolyfilledModelContext)
-  );
+  return active !== null && !(active instanceof PolyfilledModelContext);
 }

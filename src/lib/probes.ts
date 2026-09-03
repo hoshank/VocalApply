@@ -24,7 +24,8 @@
  * what keeps this page from becoming a claim nobody rechecks.
  */
 
-import type { RegisteredTool } from '../webmcp/types';
+import type { ModelContext, RegisteredTool } from '../webmcp/types';
+import { getModelContext } from '../webmcp/polyfill';
 
 export type ProbeId = 'css' | 'testid' | 'webmcp';
 
@@ -129,11 +130,15 @@ function affirm(el: HTMLInputElement | HTMLSelectElement): void {
  * throwing the day the trial build catches up. Try the object, keep the string
  * as a dated fallback, and delete the fallback then. Checked 2026-09-01.
  */
-async function executeTool(tool: RegisteredTool, input: Record<string, unknown>): Promise<string> {
+async function executeTool(
+  modelContext: ModelContext,
+  tool: RegisteredTool,
+  input: Record<string, unknown>
+): Promise<string> {
   try {
-    return await document.modelContext.executeTool(tool, input);
+    return await modelContext.executeTool(tool, input);
   } catch {
-    return await document.modelContext.executeTool(tool, JSON.stringify(input));
+    return await modelContext.executeTool(tool, JSON.stringify(input));
   }
 }
 
@@ -199,15 +204,16 @@ function testidProbe(context: ProbeContext): Promise<ProbeResult> {
  */
 function webmcpProbe(context: ProbeContext): Promise<ProbeResult> {
   return run('webmcp', context, async () => {
-    if (!document.modelContext) {
+    const modelContext = getModelContext();
+    if (!modelContext) {
       throw new Error(
-        'document.modelContext is missing — not a secure context, or the polyfill did not install'
+        'no model context — not a secure context, or the polyfill did not install'
       );
     }
-    const tools = await document.modelContext.getTools();
+    const tools = await modelContext.getTools();
     const tool = tools.find((candidate) => candidate.name === 'shortlist_role');
     if (!tool) throw new Error('no tool named shortlist_role is registered');
-    await executeTool(tool, { ...TARGET });
+    await executeTool(modelContext, tool, { ...TARGET });
   });
 }
 

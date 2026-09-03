@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { ModelContextTool } from './types';
+import { getModelContext } from './polyfill';
 
 /**
  * Registers WebMCP tools for the lifetime of a component.
@@ -45,9 +46,10 @@ export function useWebMCP(tools: ModelContextTool | ModelContextTool[]): void {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    if (!document.modelContext) {
+    const modelContext = getModelContext();
+    if (!modelContext) {
       console.error(
-        `[WebMCP] document.modelContext is missing, so ${latest.current
+        `[WebMCP] No model context, so ${latest.current
           .map((t) => t.name)
           .join(', ')} did not register. Install the polyfill before the first ` +
           `render (see src/main.tsx), or check that this is a secure context.`
@@ -70,7 +72,7 @@ export function useWebMCP(tools: ModelContextTool | ModelContextTool[]): void {
         },
       };
 
-      document.modelContext
+      modelContext
         .registerTool(registration, { signal: controller.signal })
         .catch((error) => {
           if (controller.signal.aborted) return;

@@ -14,7 +14,8 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ModelContext, RegisteredTool } from '../webmcp/types';
+import type { RegisteredTool } from '../webmcp/types';
+import { getModelContext } from '../webmcp/polyfill';
 import {
   connectLive,
   type FunctionDeclaration,
@@ -155,7 +156,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
    * spec's own event for exactly this.
    */
   useEffect(() => {
-    const modelContext = (document as Document & { modelContext?: ModelContext }).modelContext;
+    const modelContext = getModelContext();
     if (!modelContext) return;
 
     let cancelled = false;
@@ -245,7 +246,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
 
   const runToolCalls = useCallback(
     async (calls: LiveFunctionCall[]): Promise<FunctionResponsePayload[]> => {
-      const modelContext = (document as Document & { modelContext?: ModelContext }).modelContext;
+      const modelContext = getModelContext();
       const responses: FunctionResponsePayload[] = [];
 
       inFlightRef.current += 1;
@@ -255,7 +256,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
           let entryTitle = call.name;
 
           try {
-            if (!modelContext) throw new Error('This page has no document.modelContext.');
+            if (!modelContext) throw new Error('This page has no model context.');
             const tools = await modelContext.getTools();
             const target = tools.find((tool: RegisteredTool) => tool.name === call.name);
             if (!target) throw new Error(`No tool named "${call.name}" is registered.`);
@@ -426,12 +427,12 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
   const startScripted = useCallback(async () => {
     if (walkthroughRef.current || sessionRef.current) return;
 
-    const modelContext = (document as Document & { modelContext?: ModelContext }).modelContext;
+    const modelContext = getModelContext();
     if (!modelContext) {
       setState((current) => ({
         ...current,
         status: 'error',
-        error: 'This page has no document.modelContext.',
+        error: 'This page has no model context.',
       }));
       return;
     }
@@ -479,8 +480,8 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
       setState((current) => ({ ...current, status: 'connecting', mode: 'live', provider, error: null }));
 
       try {
-        const modelContext = (document as Document & { modelContext?: ModelContext }).modelContext;
-        if (!modelContext) throw new Error('This page has no document.modelContext.');
+        const modelContext = getModelContext();
+        if (!modelContext) throw new Error('This page has no model context.');
 
         // The page is asked what it can do. Nothing here knows the tool names.
         const tools = await modelContext.getTools();
@@ -555,7 +556,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
    * set, exactly like the initial declaration does.
    */
   useEffect(() => {
-    const modelContext = (document as Document & { modelContext?: ModelContext }).modelContext;
+    const modelContext = getModelContext();
     if (!modelContext) return;
 
     let timer = 0;

@@ -10,6 +10,7 @@ import {
   type ShortlistValue,
   type Variant,
 } from '../lib/probes';
+import { getModelContext } from '../webmcp/polyfill';
 import { buildTddTools } from '../webmcp/tddTools';
 import { useWebMCP } from '../webmcp/useWebMCP';
 import { ShortlistWidget } from './ShortlistWidget';
@@ -106,10 +107,11 @@ export function TDDPage({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
     // No registry at all is a real state — a non-secure context, or the
     // polyfill never installed. Return and let the WebMCP probe be the thing
     // that reports it, rather than taking the other two probes down with it.
-    if (!document.modelContext) return;
+    const modelContext = getModelContext();
+    if (!modelContext) return;
 
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const registered = await document.modelContext.getTools();
+      const registered = await modelContext.getTools();
       const present = registered.some((tool) => tool.name === 'shortlist_role');
       if (present === shouldBePresent) return;
       await settle();
@@ -129,7 +131,7 @@ export function TDDPage({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
   );
 
   // `finally` in both, because every button on the page is disabled while
-  // `running` is true. A throw on the way through — no `document.modelContext`
+  // `running` is true. A throw on the way through — no model context
   // at all, most likely — would otherwise leave the page permanently inert with
   // no error on screen, which is a worse failure than the one that caused it.
   const runAll = useCallback(async () => {

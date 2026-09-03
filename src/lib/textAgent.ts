@@ -18,6 +18,7 @@
  */
 
 import type { RegisteredTool } from '../webmcp/types';
+import { getModelContext } from '../webmcp/polyfill';
 import { toGeminiSchema } from '../voice/liveClient';
 
 export const TEXT_AGENT_MODEL = import.meta.env.VITE_GEMINI_MODEL || 'gemini-3.1-flash-lite';
@@ -121,8 +122,8 @@ export async function runTextTurn(userText: string, options: RunTextTurnOptions)
     for (let iteration = 0; iteration < maxIterations; iteration += 1) {
       if (signal.aborted) return;
 
-      const modelContext = document.modelContext;
-      if (!modelContext) throw new Error('This page has no document.modelContext.');
+      const modelContext = getModelContext();
+      if (!modelContext) throw new Error('This page has no model context.');
       const tools = await modelContext.getTools();
 
       const data = await callGemini(options, {
