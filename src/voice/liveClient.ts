@@ -74,10 +74,23 @@ export interface GeminiSchema {
   required?: string[];
 }
 
+/**
+ * A tool as the page describes it, before any provider has seen it.
+ *
+ * `parameters` is whatever `getTools()` returned for `inputSchema`: JSON Schema
+ * 2020-12, or a JSON string of it in Chrome 151. It is deliberately NOT
+ * pre-shaped for a provider, because the two providers want different shapes
+ * and one list is handed to both. Gemini wants the OpenAPI dialect with
+ * upper-case type names (`toGeminiSchema`, applied in `setup` below); OpenAI
+ * wants the JSON Schema unchanged (`toOpenAIParameters`). Mapping for Gemini
+ * here is what made OpenAI answer `invalid schema for function
+ * find_matching_roles` — the first schema-carrying tool in `getTools()`'s
+ * name-sorted order, so the first one its validator reached.
+ */
 export interface FunctionDeclaration {
   name: string;
   description: string;
-  parameters?: GeminiSchema;
+  parameters?: unknown;
 }
 
 export interface LiveFunctionCall {
@@ -279,8 +292,20 @@ export async function connectLive(options: LiveSessionOptions): Promise<LiveSess
               thinkingConfig: { thinkingLevel: options.thinkingLevel ?? LIVE_THINKING_LEVEL },
             },
             systemInstruction: { parts: [{ text: options.systemInstruction }] },
+            // Gemini's dialect is applied here, not by the caller: the same
+            // declarations go to OpenAI, which wants them untouched.
             tools: options.functionDeclarations.length
-              ? [{ functionDeclarations: options.functionDeclarations }]
+              ? [
+                  {
+                    functionDeclarations: options.functionDeclarations.map((declaration) => ({
+                      name: declaration.name,
+                      description: declaration.description,
+                      ...(declaration.parameters === undefined
+                        ? {}
+                        : { parameters: toGeminiSchema(declaration.parameters) }),
+                    })),
+                  },
+                ]
               : [],
             // Both directions, because the transcript on screen is how a person
             // checks that what the agent said matches what it did.

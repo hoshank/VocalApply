@@ -127,6 +127,66 @@ check(
   `that secret is short-lived, not a key: expires in ${livesFor}s`
 );
 
+// 2b. Every registered tool's schema, against OpenAI's own validator.
+//
+// The mint route validates `session.tools`, so this checks all of them for real
+// with no audio and no WebRTC. It exists because one declaration list is handed
+// to both providers: when the caller pre-mapped it into Gemini's dialect, OpenAI
+// answered `Invalid schema for function 'find_matching_roles': 'NUMBER' is not
+// valid under any of the given schemas` — naming that tool only because
+// getTools() is sorted by name, so it was the first schema reached.
+const schemaCheck = await page.evaluate(async () => {
+  const tools = await document.modelContext.getTools();
+  // The app's mapping for OpenAI is a pass-through, save for Chrome 151
+  // handing `inputSchema` back as a JSON string.
+  const parse = (schema) => (typeof schema === 'string' ? JSON.parse(schema) : schema);
+  const asOpenAI = tools.map((t) => ({
+    type: 'function',
+    name: t.name,
+    description: t.description,
+    parameters: t.inputSchema ? parse(t.inputSchema) : { type: 'object', properties: {} },
+  }));
+  // Upper-case every type, which is what Gemini's dialect does. This must FAIL,
+  // or the check below has stopped proving anything.
+  const upper = (node) => {
+    if (!node || typeof node !== 'object') return node;
+    const out = Array.isArray(node) ? [...node] : { ...node };
+    if (typeof out.type === 'string') out.type = out.type.toUpperCase();
+    if (out.items) out.items = upper(out.items);
+    if (out.properties) {
+      out.properties = Object.fromEntries(Object.entries(out.properties).map(([k, v]) => [k, upper(v)]));
+    }
+    return out;
+  };
+  const asGemini = asOpenAI.map((t) => ({ ...t, parameters: upper(t.parameters) }));
+
+  const mint = async (list) => {
+    const r = await fetch('/api/openai-token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ session: { type: 'realtime', model: 'gpt-realtime', tools: list } }),
+    });
+    const text = await r.text();
+    let message = '';
+    try {
+      message = JSON.parse(text).error?.message ?? '';
+    } catch {
+      message = text.slice(0, 160);
+    }
+    return { ok: r.ok, status: r.status, message };
+  };
+
+  return { count: asOpenAI.length, correct: await mint(asOpenAI), wrongDialect: await mint(asGemini) };
+});
+check(
+  schemaCheck.correct.ok,
+  `OpenAI accepts all ${schemaCheck.count} registered tool schemas: ${schemaCheck.correct.status} ${schemaCheck.correct.message.slice(0, 110)}`
+);
+check(
+  !schemaCheck.wrongDialect.ok,
+  `and rejects the same schemas in Gemini's dialect, so this check still measures something: ${schemaCheck.wrongDialect.message.slice(0, 90)}`
+);
+
 // 3. Neither long-lived key is anywhere the browser can read it.
 const bundleLeak = await page.evaluate(async () => {
   const html = await (await fetch(location.pathname)).text();

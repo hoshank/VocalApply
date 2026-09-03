@@ -184,6 +184,47 @@ export function __openaiSelfCheck(): string {
     functionDeclarations: [{ name: 'probe', description: 'probe', parameters: undefined }],
   });
 
+  /*
+    The schema must reach OpenAI as JSON Schema, lower-case types and all.
+    One declaration list is handed to both providers, and Gemini's dialect
+    upper-cases every `type`; when that mapping happened in the caller instead
+    of in each client, OpenAI answered `invalid schema for function
+    find_matching_roles` — and it named that tool only because `getTools()` is
+    sorted by name, so it was the first schema its validator reached. Nothing
+    about the failure pointed at the mapper.
+  */
+  const shaped = buildSessionUpdate({
+    systemInstruction: 'x',
+    functionDeclarations: [
+      {
+        name: 'probe',
+        description: 'probe',
+        parameters: {
+          type: 'object',
+          properties: { where: { type: 'string' }, tags: { type: 'array', items: { type: 'string' } } },
+        },
+      },
+    ],
+  });
+  const params = shaped.session.tools[0].parameters as Record<string, unknown>;
+  const props = params.properties as Record<string, Record<string, unknown>>;
+  if (params.type !== 'object' || props.where.type !== 'string') {
+    throw new Error(
+      `openai self-check: parameters reached OpenAI in the wrong dialect (type=${String(params.type)}). ` +
+        'JSON Schema uses lower-case type names; upper-case means a provider mapper ran too early.'
+    );
+  }
+  // A JSON string is what Chrome 151's getTools() hands back for inputSchema.
+  const fromString = buildSessionUpdate({
+    systemInstruction: 'x',
+    functionDeclarations: [
+      { name: 'probe', description: 'probe', parameters: JSON.stringify({ type: 'object', properties: {} }) },
+    ],
+  });
+  if ((fromString.session.tools[0].parameters as Record<string, unknown>).type !== 'object') {
+    throw new Error('openai self-check: a stringified inputSchema did not survive the mapping');
+  }
+
   if (payload.session.type !== 'realtime') {
     throw new Error("openai self-check: session.update is missing session.type: 'realtime'");
   }
@@ -193,7 +234,7 @@ export function __openaiSelfCheck(): string {
   if (payload.session.tools.length !== 1 || payload.session.tools[0].name !== 'probe') {
     throw new Error('openai self-check: tools did not map through toOpenAITools');
   }
-  return 'openai realtime self-check passed: session.type set, input language pinned to en';
+  return 'openai realtime self-check passed: session.type set, input language pinned to en, parameters left as JSON Schema';
 }
 
 export function connectOpenAIRealtime(options: OpenAIRealtimeSessionOptions): Promise<LiveSession> {

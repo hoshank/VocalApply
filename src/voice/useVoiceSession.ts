@@ -17,7 +17,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ModelContext, RegisteredTool } from '../webmcp/types';
 import {
   connectLive,
-  toGeminiSchema,
   type FunctionDeclaration,
   type FunctionResponsePayload,
   type LiveEvent,
@@ -488,7 +487,10 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
         const declarations: FunctionDeclaration[] = tools.map((tool: RegisteredTool) => ({
           name: tool.name,
           description: tool.description,
-          ...(tool.inputSchema ? { parameters: toGeminiSchema(tool.inputSchema) } : {}),
+          // Raw JSON Schema, exactly as the page registered it. Each client
+          // maps it to its own provider's dialect; doing it here sent Gemini's
+          // upper-case OPENAPI types to OpenAI, which rejected them.
+          ...(tool.inputSchema ? { parameters: tool.inputSchema } : {}),
         }));
         declaredRef.current = declarationKey(tools);
         liveStartRef.current = { provider, apiKey };
