@@ -267,3 +267,7 @@ cookies anywhere. See `hackathon/DATA_AND_PRIVACY.md`.
 
 The company, the roles, the salaries, the sites and both sample applicants. No application is ever
 sent anywhere.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
