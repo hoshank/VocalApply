@@ -167,10 +167,21 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
     };
 
     refresh();
-    modelContext.addEventListener('toolchange', refresh);
+    // Not every implementation is an EventTarget: native Chromium and the
+    // ChatGPT in-app browser's shim both omit it, whatever the IDL says. Poll
+    // as a fallback rather than throwing, which is what
+    // `L.addEventListener is not a function` was.
+    if (typeof modelContext.addEventListener === 'function') {
+      modelContext.addEventListener('toolchange', refresh);
+      return () => {
+        cancelled = true;
+        modelContext.removeEventListener('toolchange', refresh);
+      };
+    }
+    const poll = window.setInterval(refresh, 2000);
     return () => {
       cancelled = true;
-      modelContext.removeEventListener('toolchange', refresh);
+      window.clearInterval(poll);
     };
   }, []);
 
@@ -597,10 +608,19 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
       timer = window.setTimeout(() => void reopen(), 400);
     };
 
-    modelContext.addEventListener('toolchange', onToolChange);
+    // Same feature detection as above, and the fallback matters more here: a
+    // session that is never re-declared cannot call the form tools at all.
+    if (typeof modelContext.addEventListener === 'function') {
+      modelContext.addEventListener('toolchange', onToolChange);
+      return () => {
+        window.clearTimeout(timer);
+        modelContext.removeEventListener('toolchange', onToolChange);
+      };
+    }
+    const poll = window.setInterval(() => void reopen(), 2000);
     return () => {
       window.clearTimeout(timer);
-      modelContext.removeEventListener('toolchange', onToolChange);
+      window.clearInterval(poll);
     };
   }, [pushLine, start, stop]);
 

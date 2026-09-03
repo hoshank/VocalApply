@@ -494,14 +494,30 @@ class PolyfilledModelContext extends EventTarget implements ModelContext {
  * `modelContext.addEventListener('toolchange', …)` calling a method the stub
  * never defined — `TypeError: … .addEventListener is not a function`.
  */
+/**
+ * Is this thing a model context we should register into?
+ *
+ * The three methods, and **deliberately not `addEventListener`**. The IDL says
+ * `ModelContext : EventTarget`, but shipping implementations do not: current
+ * native Chromium builds omit the EventTarget surface, and the ChatGPT
+ * in-app browser's shim does too (it carries non-standard
+ * `codexGetTools`/`codexExecuteTool` instead). Requiring it here rejected
+ * every real implementation and installed this polyfill in its place — so the
+ * page's tools went into a private registry and the browser's own agent, which
+ * reads its own, found nothing. That is the bug this comment exists to stop
+ * anyone reintroducing: an implementation missing `toolchange` is a listener
+ * we skip, never a reason to take over the page.
+ *
+ * `useVoiceSession` and anything else wanting `toolchange` must therefore
+ * feature-detect it and carry a fallback.
+ */
 function looksLikeModelContext(value: unknown): value is ModelContext {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<ModelContext>;
   return (
     typeof candidate.registerTool === 'function' &&
     typeof candidate.getTools === 'function' &&
-    typeof candidate.executeTool === 'function' &&
-    typeof (value as EventTarget).addEventListener === 'function'
+    typeof candidate.executeTool === 'function'
   );
 }
 
@@ -520,6 +536,49 @@ export function getModelContext(): ModelContext | undefined {
   return active ?? undefined;
 }
 
+const adoptionListeners = new Set<() => void>();
+
+/**
+ * Notifies when the implementation this page talks to is replaced.
+ *
+ * An AI-browser shell attaches its shim when its agent attaches to the tab,
+ * which can be long after load. Anything already registered lives in the
+ * implementation that was there first, so callers re-register on this.
+ */
+export function onModelContextChange(listener: () => void): () => void {
+  adoptionListeners.add(listener);
+  return () => adoptionListeners.delete(listener);
+}
+
+/**
+ * Watch for a real implementation arriving after we installed the polyfill.
+ *
+ * Polling, because there is nothing to listen to: the property is installed by
+ * a browser extension or shell whenever its agent decides to attach. Ten
+ * seconds of one-second checks, then it stops — an agent that attaches later
+ * than that will find the polyfill, and the page still works, it is just not
+ * wired to the browser's own agent.
+ */
+function watchForRealImplementation(): void {
+  if (typeof window === 'undefined') return;
+  let checks = 0;
+  const timer = window.setInterval(() => {
+    checks += 1;
+    const current = 'modelContext' in document ? document.modelContext : undefined;
+    if (current && current !== active && looksLikeModelContext(current)) {
+      window.clearInterval(timer);
+      active = current;
+      console.info(
+        '[WebMCP] This browser installed its own model context after load. ' +
+          'Re-registering into it, so its agent sees this page\'s tools.'
+      );
+      for (const listener of adoptionListeners) listener();
+      return;
+    }
+    if (checks >= 10) window.clearInterval(timer);
+  }, 1000);
+}
+
 /**
  * Installs the polyfill if and only if the browser lacks a native
  * implementation. Returns true when a native `document.modelContext` was found.
@@ -535,6 +594,8 @@ export function setupWebMCPPolyfill(): boolean {
 
   const polyfill = new PolyfilledModelContext(document);
   active = polyfill;
+  // We own the property for now, but a shell's agent may still turn up.
+  watchForRealImplementation();
 
   try {
     Object.defineProperty(document, 'modelContext', {

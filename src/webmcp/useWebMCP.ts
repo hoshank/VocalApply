@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ModelContextTool } from './types';
-import { getModelContext } from './polyfill';
+import { getModelContext, onModelContextChange } from './polyfill';
 
 /**
  * Registers WebMCP tools for the lifetime of a component.
@@ -29,6 +29,16 @@ import { getModelContext } from './polyfill';
  */
 export function useWebMCP(tools: ModelContextTool | ModelContextTool[]): void {
   const list = Array.isArray(tools) ? tools : [tools];
+
+  /**
+   * Bumped when the page's model context is replaced, which re-runs the
+   * registration effect below. An AI-browser shell installs its shim when its
+   * agent attaches to the tab, and that can be long after this ran: without
+   * this the tools stay in whichever implementation was there first, and the
+   * browser's agent — reading its own — sees an empty page.
+   */
+  const [contextVersion, setContextVersion] = useState(0);
+  useEffect(() => onModelContextChange(() => setContextVersion((n) => n + 1)), []);
 
   const latest = useRef<ModelContextTool[]>(list);
   latest.current = list;
@@ -82,5 +92,5 @@ export function useWebMCP(tools: ModelContextTool | ModelContextTool[]): void {
 
     return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signature]);
+  }, [signature, contextVersion]);
 }
