@@ -89,6 +89,7 @@ URL=http://127.0.0.1:3230 node voice-shared-credit-verify.mjs
 | `voice-scope-verify.mjs` | the board-to-application handover: the swap fires `toolchange`, the application scope registers `fill_step`, values reach the DOM, and — with the socket stubbed, so no key and no microphone — the live session is re-opened and its *second* `setup` declares the form tools the first one could not |
 | `voice-audio-verify.mjs` | the playback path, measured: a 440 Hz sine in 20 ms chunks scheduled the way the model's audio is. 15.7x the sine's own steepest slope through a 44.1 kHz context, 1.0x when playback is pinned to the model's 24 kHz. Asserts the broken case stays broken, so the probe cannot quietly stop measuring anything |
 | `voice-shared-credit-verify.mjs` | both shared-credit routes with an **empty** key field, and that neither long-lived key is in the served bundle. Needs no key of its own |
+| `voice-session-reset-verify.mjs` | what a session end clears and what it must not: a bulk fill goes, a spoken correction stays, a reload opens on the correction alone, and the internal re-open on a tool-scope change does **not** count as an end |
 
 There is no test runner here. Those three, plus four self-checks that run at boot in the deployed
 build as well as in dev, are what stands in for one.

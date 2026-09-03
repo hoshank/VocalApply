@@ -84,6 +84,21 @@ export interface UseVoiceSessionOptions {
   systemInstruction: () => string;
   /** Called after any tool ran, so the page can re-read its own state. */
   onToolRan?: (name: string) => void;
+  /**
+   * The person ended the session — `stop()`, which is the End session button.
+   * The page uses it to put the form back to a fresh demo.
+   *
+   * Only that path. A socket the server closed, and a scripted walkthrough
+   * that reached its own end, both leave the form alone: the first would wipe
+   * a half-finished form under someone, and the second would erase the result
+   * the walkthrough exists to show.
+   *
+   * **Not called when the session is re-opened because the tool scope
+   * changed.** That path stops and starts a socket by itself, and a page that
+   * cleared its form on it would wipe the application the moment a role was
+   * opened.
+   */
+  onSessionEnded?: () => void;
 }
 
 export interface StartOptions {
@@ -320,6 +335,9 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
             status: current.status === 'error' ? 'error' : 'idle',
             speaking: false,
           }));
+          // No `onSessionEnded`: a socket the server closed mid-demo is not
+          // the person finishing, and wiping a half-filled form under them
+          // would be worse than leaving it. `stop()` is the deliberate end.
           break;
       }
     },
@@ -345,6 +363,7 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
       speaking: false,
       level: 0,
     }));
+    if (!reopeningRef.current) optionsRef.current.onSessionEnded?.();
   }, []);
 
   /**
@@ -446,6 +465,11 @@ export function useVoiceSession(options: UseVoiceSessionOptions) {
             ? current
             : { ...current, status: 'idle', mode: null, speaking: false }
         );
+        // Deliberately no `onSessionEnded` here. A walkthrough that runs to
+        // the end is showing its result — a filled form with the declaration
+        // still unticked — and clearing that at the final line would erase the
+        // thing the person was watching. Pressing Stop goes through `stop()`
+        // instead, which does clear.
       }
     }
   }, [runToolCalls, speak]);

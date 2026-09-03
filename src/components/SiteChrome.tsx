@@ -93,9 +93,10 @@ export function SiteFooter() {
               agent can fill a form and still cannot press submit.
             </p>
             <p className="mt-3 text-[0.875rem] leading-relaxed text-[var(--color-ink-muted)]">
-              Answers you give or correct stay in this browser, per sample person, so the form
-              remembers them next time. Nothing leaves the tab except the audio of a voice session
-              you start yourself, and one anonymous row saying this page was opened. No cookies, and
+              An answer you correct out loud stays in this browser, per sample person, so you do not
+              have to repeat it next time. The rest of the form clears when the session ends and is
+              never written down. Nothing leaves the tab except the audio of a voice session you
+              start yourself, and one anonymous row saying this page was opened. No cookies, and
               nothing that can recognise you on a second visit.
             </p>
             <AnalyticsControl />

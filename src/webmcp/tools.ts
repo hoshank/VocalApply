@@ -45,7 +45,14 @@ export interface VoiceSnapshot {
 export interface ToolsInput {
   getState: () => VoiceSnapshot;
   fillStep: (stepId: string) => FillOutcome;
-  setFieldValue: (stepId: string, field: string, value: FieldValue) => void;
+  /**
+   * What `correct_field` writes, and the only tool-side writer of a single
+   * field. It is deliberately not the same function the form's own inputs use:
+   * a correction spoken out loud is the one answer that outlives the session,
+   * while everything a bulk fill wrote is cleared when the session ends, so a
+   * demo never opens on the last demo's form.
+   */
+  correctField: (stepId: string, field: string, value: FieldValue) => void;
   openStep: (stepId: string) => void;
   selectApplicant: (applicantId: string) => void;
   /** Moves focus to the submit button. Cannot press it; nothing here can. */
@@ -180,7 +187,7 @@ function roleCard(role: JobPosting) {
 export function buildTools({
   getState,
   fillStep,
-  setFieldValue,
+  correctField,
   openStep,
   selectApplicant,
   focusSubmit,
@@ -556,7 +563,7 @@ export function buildTools({
         if (field.kind === 'number' && !Number.isFinite(coerced as number)) {
           return fail(`"${value}" is not a number.`);
         }
-        setFieldValue(step.id, field.name, coerced);
+        correctField(step.id, field.name, coerced);
         // Writing the answer ends the wait, whichever field was being asked about.
         setAwaiting(null);
         return { ok: true, stepId: step.id, field: field.name, value: coerced };

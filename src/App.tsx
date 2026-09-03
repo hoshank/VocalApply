@@ -23,16 +23,29 @@ const KEY_STORAGE: Record<VoiceProvider, string> = {
   gemini: 'voice-application:gemini-key',
   openai: 'voice-application:openai-key',
 };
-const SAVED_VALUES_PREFIX = 'voice-application:saved-values:';
+const CORRECTIONS_PREFIX = 'voice-application:corrections:';
+/**
+ * Superseded. It held the WHOLE form, so a finished demo left the next one
+ * opening pre-filled. `loadCorrections` deletes it on sight, which is what
+ * cleans up a browser that already has one of those saved.
+ */
+const LEGACY_VALUES_PREFIX = 'voice-application:saved-values:';
 
 /**
- * Per-applicant memory. Keyed on the person rather than the role, because every
- * opening shares one application shape: an answer given once is still the right
- * answer on the next role.
+ * Per-applicant memory, and it holds **only what the person corrected out
+ * loud**. Keyed on the person rather than the role, because every opening
+ * shares one application shape: an answer given once is still the right answer
+ * on the next role.
+ *
+ * What a bulk `fill_step` wrote is deliberately NOT in here. Those answers live
+ * for the session and are cleared when it ends, so a demo always starts on an
+ * empty form. The one thing that survives is the thing the demo claims
+ * survives: "my salary went up", said once, still there next time.
  */
-function loadSavedValues(applicantId: string): Record<string, Record<string, FieldValue>> {
+function loadCorrections(applicantId: string): Record<string, Record<string, FieldValue>> {
   try {
-    const raw = localStorage.getItem(SAVED_VALUES_PREFIX + applicantId);
+    localStorage.removeItem(LEGACY_VALUES_PREFIX + applicantId);
+    const raw = localStorage.getItem(CORRECTIONS_PREFIX + applicantId);
     return raw ? JSON.parse(raw) : {};
   } catch {
     return {};
@@ -63,8 +76,13 @@ export function App({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
   const [applicantId, setApplicantId] = useState(applicants[0].id);
   const [roleId, setRoleId] = useState(featuredOpening.id);
   const [applicationOpen, setApplicationOpen] = useState(false);
+  /** What survives a session end: corrections only. See `loadCorrections`. */
+  const [corrections, setCorrections] = useState<Record<string, Record<string, FieldValue>>>(() =>
+    loadCorrections(applicants[0].id)
+  );
+  /** The working form. Seeded from the corrections, cleared back to them. */
   const [values, setValues] = useState<Record<string, Record<string, FieldValue>>>(() =>
-    loadSavedValues(applicants[0].id)
+    loadCorrections(applicants[0].id)
   );
   const [outcomes, setOutcomes] = useState<Record<string, FillOutcome>>({});
   const [currentStepId, setCurrentStepId] = useState(featuredOpening.steps[0].id);
@@ -116,6 +134,22 @@ export function App({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
     );
   }, []);
 
+  /**
+   * `correct_field`, and the only writer of anything that outlives the session.
+   * Typing into the form goes through `setFieldValue` above and is session-only:
+   * a demo should not inherit the last demo's typing.
+   */
+  const correctField = useCallback(
+    (stepId: string, field: string, value: FieldValue) => {
+      setFieldValue(stepId, field, value);
+      setCorrections((current) => ({
+        ...current,
+        [stepId]: { ...(current[stepId] ?? {}), [field]: value },
+      }));
+    },
+    [setFieldValue]
+  );
+
   /** The only path from a tool to the form's values. */
   const fillStep = useCallback((stepId: string): FillOutcome => {
     const step = stateRef.current.posting.steps.find((entry) => entry.id === stepId);
@@ -136,7 +170,9 @@ export function App({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
 
   const selectApplicant = useCallback((id: string) => {
     setApplicantId(id);
-    setValues(loadSavedValues(id));
+    const remembered = loadCorrections(id);
+    setCorrections(remembered);
+    setValues(remembered);
     setOutcomes({});
     setAwaiting(null);
     setSubmitted(false);
@@ -211,15 +247,32 @@ export function App({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
     });
   }, []);
 
-  // Whatever this persona's form holds is what "next time" means: it survives a
-  // reload or a switch away and back. Nothing here leaves the tab.
+  // What this persona corrected out loud is what "next time" means. The rest of
+  // the form is not written down at all, which is why a finished demo does not
+  // hand the next one a filled-in application. Nothing here leaves the tab.
   useEffect(() => {
     try {
-      localStorage.setItem(SAVED_VALUES_PREFIX + applicantId, JSON.stringify(values));
+      localStorage.setItem(CORRECTIONS_PREFIX + applicantId, JSON.stringify(corrections));
     } catch {
       // Storage blocked. The session still works, it just will not remember.
     }
-  }, [values, applicantId]);
+  }, [corrections, applicantId]);
+
+  /**
+   * A session ended, so put the form back to a fresh demo: everything a fill
+   * wrote goes, the badges and the highlight go, and the corrections stay.
+   *
+   * Not called on a reconnect. `useVoiceSession` re-opens the session by
+   * itself when the registered tools change scope, and clearing the form
+   * underneath that would wipe the application mid-demo.
+   */
+  const clearSessionAnswers = useCallback(() => {
+    setValues(corrections);
+    setOutcomes({});
+    setAwaiting(null);
+    setJustFilled(new Set());
+    setSubmitted(false);
+  }, [corrections]);
 
   const focusSubmit = useCallback(() => {
     const button = submitRef.current;
@@ -234,7 +287,7 @@ export function App({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
     () => ({
       getState: () => stateRef.current,
       fillStep,
-      setFieldValue,
+      correctField,
       openStep,
       selectApplicant,
       focusSubmit,
@@ -245,7 +298,7 @@ export function App({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
     }),
     [
       fillStep,
-      setFieldValue,
+      correctField,
       openStep,
       selectApplicant,
       focusSubmit,
@@ -282,6 +335,7 @@ export function App({ hasNativeWebMCP }: { hasNativeWebMCP: boolean }) {
   // from `tools` above, which is why nothing is passed to it here.
   // ---------------------------------------------------------------------
   const voice = useVoiceSession({
+    onSessionEnded: clearSessionAnswers,
     systemInstruction: () =>
       buildSystemInstruction({
         applicantName: stateRef.current.applicant.name,
