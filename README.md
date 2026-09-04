@@ -7,7 +7,10 @@ and fills the form by talking to you.
 It stops at the submit button, and it stops there because there is no tool that presses it.
 
 **Live:** [vocalapply.trustvalidated.com](https://vocalapply.trustvalidated.com) ·
-**Selector resilience:** [?tdd=1](https://vocalapply.trustvalidated.com/?tdd=1)
+**Demo Video** [Youtube](https://youtu.be/MVwCNpvyZ2E?si=vVCX8PWbNZYfuBEu) . 
+
+
+**TDD Selector resilience (Demonstrate WebMCP surviving flaky Integration tests) :** [?tdd=1](https://vocalapply.trustvalidated.com/?tdd=1)
 
 ---
 
